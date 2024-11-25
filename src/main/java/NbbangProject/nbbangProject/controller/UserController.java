@@ -1,14 +1,13 @@
 package NbbangProject.nbbangProject.controller;
 
-import NbbangProject.nbbangProject.form.UserCreateForm;
+import NbbangProject.nbbangProject.dto.UserCreateDto;
+import NbbangProject.nbbangProject.dto.VerificationDto;
 import NbbangProject.nbbangProject.service.UserService;
 import jakarta.validation.Valid;
-import org.springframework.dao.DataIntegrityViolationException;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.*;
-
-import lombok.RequiredArgsConstructor;
 
 @RequiredArgsConstructor
 @RestController
@@ -17,35 +16,46 @@ public class UserController {
 
     private final UserService userService;
 
-
-    @GetMapping("/signup")
-    public ResponseEntity<String> signup() {
-        // 클라이언트가 GET 요청을 보낼 경우 처리할 로직 (예: signup 폼을 요청)
-        return ResponseEntity.ok("회원가입 페이지 요청");
-    }
-
     @PostMapping("/signup")
-    public ResponseEntity<?> signup(@Valid @RequestBody UserCreateForm userCreateForm, BindingResult bindingResult) {
+    public ResponseEntity<?> signup(@Valid @RequestBody UserCreateDto userCreateDto, BindingResult bindingResult) {
+
         if (bindingResult.hasErrors()) {
-            return ResponseEntity.badRequest().body("유효성 검사 실패: 입력 값을 확인해주세요.");
+            return ResponseEntity.badRequest().body("입력값이 유효하지 않습니다.");
         }
 
-        if (!userCreateForm.getPassword1().equals(userCreateForm.getPassword2())) {
+        if (!userCreateDto.getPassword1().equals(userCreateDto.getPassword2())) {
             return ResponseEntity.badRequest().body("비밀번호가 일치하지 않습니다.");
         }
 
+        // 이메일 인증 코드 전송
         try {
-            userService.create(userCreateForm.getUsername(), userCreateForm.getEmail(),
-                    userCreateForm.getPassword1());
-        } catch (DataIntegrityViolationException e) {
-            e.printStackTrace();
+            userService.sendVerificationCode(
+                    userCreateDto.getEmail(),
+                    userCreateDto.getUsername(),
+                    userCreateDto.getPassword1()
+            );
+            return ResponseEntity.ok("이메일로 인증 코드가 발송되었습니다.");
+        } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(e.getMessage());
-        } catch (Exception e) {
-            e.printStackTrace();
-            return ResponseEntity.internalServerError().body("서버 에러: " + e.getMessage());
         }
+    }
 
-        return ResponseEntity.ok("회원가입 성공");
+    @PostMapping("/signup/code")
+    public ResponseEntity<?> verifyCode(@RequestBody VerificationDto verificationRequest) {
+        String email = verificationRequest.getEmail();
+        String code = verificationRequest.getCode();
+
+        // 인증 코드 확인
+        if (userService.verifyCode(email, code)) {
+            try {
+                userService.completeSignup(email);
+                return ResponseEntity.ok("회원가입 성공");
+            } catch (IllegalArgumentException e) {
+                return ResponseEntity.badRequest().body(e.getMessage());
+            }
+        } else {
+            return ResponseEntity.badRequest().body("인증 코드가 잘못되었습니다.");
+        }
     }
 
 }
